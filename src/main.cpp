@@ -512,6 +512,7 @@ start_pipeline(gboolean create_offer)
     GstStateChangeReturn ret;
     GError *error = NULL;
 
+#if 0
     pipe1 =
         gst_parse_launch("webrtcbin bundle-policy=max-bundle name=sendrecv "
             STUN_SERVER
@@ -565,6 +566,39 @@ start_pipeline(gboolean create_offer)
         g_clear_object(&audio_twcc);
         g_clear_object(&audiopay);
     }
+#endif
+
+    webrtc1 = gst_element_factory_make("webrtcbin", "recvonly");
+    g_object_set(webrtc1, "bundle-policy", GST_WEBRTC_BUNDLE_POLICY_MAX_BUNDLE, nullptr);
+
+
+    pipe1 = gst_pipeline_new(nullptr);
+
+    gst_bin_add_many(GST_BIN(pipe1),
+        webrtc1,
+        nullptr);
+
+    g_object_set(webrtc1, "stun-server", "stun:stun.l.google.com:19302", nullptr);
+
+    {
+        GstWebRTCRTPTransceiver *trans;
+        //auto video_caps = gst_caps_from_string("application/x-rtp,media=video,encoding-name=vp8,clock-rate=90000,ssrc=1,payload=98,fec-type=ulp-red,do-nack=true");
+        auto video_caps = gst_caps_from_string(RTP_CAPS_VP8 "96");
+        g_signal_emit_by_name(webrtc1, "add-transceiver", GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY, video_caps, &trans);
+        gst_caps_unref(video_caps);
+        gst_object_unref(trans);
+    }
+
+    //{
+    //    GstWebRTCRTPTransceiver *trans;
+    //    //auto audio_caps = gst_caps_from_string("application/x-rtp,media=audio,encoding-name=opus,payload=111,fec-type=ulp-red,do-nack=true,clock-rate=48000");
+    //    auto audio_caps = gst_caps_from_string(RTP_CAPS_OPUS "97");
+    //    g_signal_emit_by_name(webrtc1, "add-transceiver", GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY, audio_caps, &trans);
+    //    gst_caps_unref(audio_caps);
+    //    gst_object_unref(trans);
+    //}
+
+
 
     /* This is the gstwebrtc entry point where we create the offer and so on. It
      * will be called when the pipeline goes to PLAYING. */
