@@ -49,7 +49,8 @@ GST_DEBUG_CATEGORY_STATIC(GST_CAT_DEFAULT);
 
 static GMainLoop *loop;
 static GstElement *pipe1, *webrtc1 = NULL;
-static GObject *send_channel, *receive_channel;
+//static GObject *send_channel, 
+static GObject *receive_channel;
 
 //static SoupWebsocketConnection *ws_conn = NULL;
 static enum AppState app_state = APP_STATE_UNKNOWN;
@@ -617,6 +618,7 @@ start_pipeline(gboolean create_offer)
 
     gst_element_set_state(pipe1, GST_STATE_READY);
 
+    /*
     g_signal_emit_by_name(webrtc1, "create-data-channel", "channel", NULL,
         &send_channel);
     if (send_channel) {
@@ -626,6 +628,7 @@ start_pipeline(gboolean create_offer)
     else {
         gst_print("Could not create data channel, is usrsctp available?\n");
     }
+    */
 
     g_signal_connect(webrtc1, "on-data-channel", G_CALLBACK(on_data_channel),
         NULL);
