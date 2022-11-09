@@ -20,7 +20,10 @@
 
 #include <iostream>
 #include <string>
-
+#include <sstream>
+#include <vector>
+#include <numeric>
+#include <algorithm>
 
 enum AppState
 {
@@ -46,6 +49,53 @@ static GObject *receive_channel;
 static enum AppState app_state = APP_STATE_UNKNOWN;
 static const gboolean disable_ssl = FALSE;
 static const gboolean remote_is_offerer = FALSE;
+
+// https://webrtchacks.com/limit-webrtc-bandwidth-sdp/
+static std::string setMediaBitrate(const std::string& sdp, const std::string& media, int bitrate)
+{
+    std::istringstream ss(sdp);
+
+    std::vector<std::string> lines;
+
+    std::string buffer;
+    while (std::getline(ss, buffer))
+        lines.push_back(buffer);
+
+    auto it = std::find_if(lines.begin(), lines.end(), [&media](const std::string& v) { return v.find("m=" + media) == 0; });
+
+    if (it == lines.end())
+        return sdp;
+
+    ++it;
+
+    it = std::find_if(it, lines.end(), [](const std::string& v) { return v.find("i=") != 0 && v.find("c=") != 0; });
+
+    const auto b_line = "b=AS:" + std::to_string(bitrate);
+    if (it != lines.end() && it->find("b") == 0)
+    {
+        *it = b_line;
+    }
+    else
+    {
+        lines.insert(it, b_line);
+    }
+
+    //return std::accumulate(std::next(lines.begin()), lines.end(), lines[0],
+    //    [](std::string a, const std::string& b) { return std::move(a) + '\n' + b; });
+
+    std::string result;
+    for (auto& v : lines)
+    {
+        if (!v.empty())
+        {
+            result += v;
+            result += '\n';
+        }
+    }
+
+    return result;
+}
+
 
 static gboolean
 cleanup_and_quit_loop(const gchar * msg, enum AppState state)
@@ -176,32 +226,31 @@ on_incoming_stream(GstElement * webrtc, GstPad * pad, GstElement * pipe)
 static void
 send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 {
-    gchar *text;
-    //JsonObject *msg, *sdp;
-
     if (app_state < PEER_CALL_NEGOTIATING) {
         cleanup_and_quit_loop("Can't send SDP to peer, not in call",
             APP_STATE_ERROR);
         return;
     }
 
-    text = gst_sdp_message_as_text(desc->sdp);
+    auto text = gst_sdp_message_as_text(desc->sdp);
+    auto correctedText = setMediaBitrate(text, "video", 500);
+    g_free(text);
+
     auto sdp = json_object_new();
 
     if (desc->type == GST_WEBRTC_SDP_TYPE_OFFER) {
-        gst_print("Sending offer:\n%s\n", text);
+        gst_print("Sending offer:\n%s\n", correctedText.c_str());
         json_object_set_string_member(sdp, "type", "offer");
     }
     else if (desc->type == GST_WEBRTC_SDP_TYPE_ANSWER) {
-        gst_print("Sending answer:\n%s\n", text);
+        gst_print("Sending answer:\n%s\n", correctedText.c_str());
         json_object_set_string_member(sdp, "type", "answer");
     }
     else {
         g_assert_not_reached();
     }
 
-    json_object_set_string_member(sdp, "sdp", text);
-    g_free(text);
+    json_object_set_string_member(sdp, "sdp", correctedText.c_str());
 
     text = get_string_from_json_object(sdp);
 
