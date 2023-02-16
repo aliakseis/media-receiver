@@ -44,7 +44,7 @@ link_directories(${GSTREAMER_LIBRARY_DIRS})
 
 # 実行ファイルの作成
 add_executable(media-receiver 
-  src/main.cpp)
+  src/main.cpp src/http.cpp src/http.h)
 
 # gstreamer ヘッダーへのパスを設定
 target_include_directories(media-receiver  PUBLIC ${GSTREAMER_INCLUDE_DIRS})

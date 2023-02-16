@@ -6,6 +6,9 @@
  *
  * Author: Nirbheek Chauhan <nirbheek@centricular.com>
  */
+
+#include "http.h"
+
 #include <gst/gst.h>
 #include <gst/sdp/sdp.h>
 #include <gst/rtp/rtp.h>
@@ -24,6 +27,9 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+#include <thread>
+#include <atomic>
+#include <future>
 
 enum AppState
 {
@@ -49,6 +55,9 @@ static GObject *receive_channel;
 static enum AppState app_state = APP_STATE_UNKNOWN;
 static const gboolean disable_ssl = FALSE;
 static const gboolean remote_is_offerer = FALSE;
+
+const char send_offer_url[] = "https://ntfy.sh/mediaReceiverSendOffer";
+const char get_answer_url[] = "https://ntfy.sh/mediaReceiverGetAnswer/sse";
 
 // https://webrtchacks.com/limit-webrtc-bandwidth-sdp/
 static std::string setMediaBitrate(const std::string& sdp, const std::string& media, int bitrate)
@@ -223,6 +232,113 @@ on_incoming_stream(GstElement * webrtc, GstPad * pad, GstElement * pipe)
     gst_object_unref(sinkpad);
 }
 
+
+static const char* verify_sse_response(CURL* curl) {
+#define EXPECTED_CONTENT_TYPE "text/event-stream"
+
+    static const char expected_content_type[] = EXPECTED_CONTENT_TYPE;
+
+    const char* content_type;
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &content_type);
+    if (!content_type) content_type = "";
+
+    if (!strncmp(content_type, expected_content_type, strlen(expected_content_type)))
+        return 0;
+
+    return "Invalid content_type, should be '" EXPECTED_CONTENT_TYPE "'.";
+}
+
+
+
+static auto getRemoteEcho()
+{
+    std::promise<bool> startedPromise;
+    std::promise<std::string> responsePromise;
+
+    auto startedResult = startedPromise.get_future();
+    auto responseResult = responsePromise.get_future();
+
+    auto threadLam = [](
+        std::promise<bool> startedPromise,
+        std::promise<std::string> responsePromise
+        ) {
+            const char* headers[] = {
+                "Accept: text/event-stream",
+                NULL
+            };
+
+            bool requestInterrupted = false;
+
+            auto on_data = [&startedPromise, &responsePromise, &requestInterrupted](char *ptr, size_t size, size_t nmemb)->size_t {
+                try {
+                    const auto ptrEnd = ptr + size * nmemb;
+
+                    const char watch[] = "data:";
+
+                    auto pData = std::search(ptr, ptrEnd, std::begin(watch), std::prev(std::end(watch)));
+                    if (pData != ptrEnd) do {
+                        pData += sizeof(watch) / sizeof(watch[0]) - 1;
+
+                        JsonParser *parser = json_parser_new();
+                        if (!json_parser_load_from_data(parser, pData, ptrEnd - pData, NULL)) {
+                            //gst_printerr("Unknown message '%s', ignoring\n", text);
+                            g_object_unref(parser);
+                            break; //goto out;
+                        }
+
+                        auto root = json_parser_get_root(parser);
+                        if (!JSON_NODE_HOLDS_OBJECT(root)) {
+                            //gst_printerr("Unknown json message '%s', ignoring\n", text);
+                            g_object_unref(parser);
+                            break; //goto out;
+                        }
+
+                        auto child = json_node_get_object(root);
+
+                        if (!json_object_has_member(child, "event")) {
+                            g_object_unref(parser);
+                            break; //goto out;
+                        }
+
+                        auto sdptype = json_object_get_string_member(child, "event");
+                        if (g_str_equal(sdptype, "open")) {
+                            startedPromise.set_value(true);
+                        }
+                        else if (g_str_equal(sdptype, "message")) {
+                            auto text = json_object_get_string_member(child, "message");
+                            responsePromise.set_value(text);
+                            requestInterrupted = true;
+                        }
+
+                        g_object_unref(parser);
+
+                    } while (false);
+                }
+                catch (const std::exception&) {
+                    startedPromise.set_value(false);
+                    requestInterrupted = true;
+                }
+                return size * nmemb;
+            };
+
+            auto progress_callback = [&requestInterrupted](curl_off_t dltotal,
+                curl_off_t dlnow,
+                curl_off_t ultotal,
+                curl_off_t ulnow)->size_t {
+                    return requestInterrupted;
+            };
+
+
+            http(HTTP_GET, get_answer_url, headers, 0, 0, on_data, verify_sse_response, progress_callback);
+    };
+
+    // https://stackoverflow.com/a/23454840/10472202
+    std::thread(threadLam, std::move(startedPromise), std::move(responsePromise)).detach();
+
+    return std::make_tuple(std::move(startedResult), std::move(responseResult));
+}
+
+
 static void
 send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 {
@@ -254,6 +370,7 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 
     text = get_string_from_json_object(sdp);
 
+#if 0
     std::cout << text << std::endl;
 
     g_free(text);
@@ -262,6 +379,22 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 
     std::string s;
     std::getline(std::cin, s);
+#endif
+
+
+    auto[startedResult, responseResult] = getRemoteEcho();
+
+    if (!startedResult.get()) {
+        std::cerr << "Failed to SSE connect to the server.\n";
+        return;
+    }
+
+    http(HTTP_POST, send_offer_url, nullptr, text, strlen(text));
+
+    g_free(text);
+
+    std::string s = responseResult.get();
+
 
     JsonParser *parser = json_parser_new();
     if (!json_parser_load_from_data(parser, s.c_str(), -1, NULL)) {
@@ -282,6 +415,7 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
     if (!json_object_has_member(child, "type")) {
         cleanup_and_quit_loop("ERROR: received SDP without 'type'",
             PEER_CALL_ERROR);
+        g_object_unref(parser);
         return; //goto out;
     }
 
