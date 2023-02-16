@@ -370,8 +370,9 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 
     text = get_string_from_json_object(sdp);
 
-#if 0
-    std::cout << text << std::endl;
+#ifdef COPY_PASTE
+
+    //std::cout << text << std::endl;
 
     g_free(text);
 
@@ -379,8 +380,8 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 
     std::string s;
     std::getline(std::cin, s);
-#endif
 
+#else
 
     auto[startedResult, responseResult] = getRemoteEcho();
 
@@ -395,6 +396,7 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
 
     std::string s = responseResult.get();
 
+#endif
 
     JsonParser *parser = json_parser_new();
     if (!json_parser_load_from_data(parser, s.c_str(), -1, NULL)) {
