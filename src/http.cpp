@@ -6,7 +6,6 @@
  */
  
 #include "http.h"
-//#include "sse.h"
 
 #include <thread>
 #include <chrono>
@@ -15,9 +14,6 @@
 #define SSE_CLIENT_VERSION       "0.2"
 #define SSE_CLIENT_USERAGENT     "sse/" SSE_CLIENT_VERSION
 
-//#define die(msg) do { perror(msg); exit(1); } while(0)
-
-//DEFINE_OBJECT(Options, options);
 
 Options options{};
 
@@ -40,7 +36,6 @@ static bool curl_perform(CURL* curl) {
           return false;
 
         fprintf(stderr, "retrying...\n");
-        //sleep(3);
         std::this_thread::sleep_for(std::chrono::seconds(3));
         break;
       default:
@@ -113,26 +108,15 @@ static void curl_log_result(CURL* curl) {
 
 static CURL* curl_handle(int /*index*/) {
   static std::once_flag curl_initialised;
-  //static CURL *curl_handles[MAX_HANDLES];
 
   std::call_once(curl_initialised,[] {
-    //curl_initialised = 1;
-    //memset(curl_handles, 0, sizeof(curl_handles));
     curl_global_init(CURL_GLOBAL_ALL);  /* In windows, this will init the winsock stuff */ 
     atexit(curl_global_cleanup);
   });
 
-  //CURL* curl = curl_handles[index];
-  //if(!curl) {
-  //  curl = curl_handles[index] = curl_easy_init();
-  //  if(!curl)
-  //    die("curl");
-  //}
-
   CURL* curl = curl_easy_init();
   if (!curl)
       return nullptr;
-      //die("curl");
 
   /* === verbosity? ================================================ */
 
@@ -140,7 +124,6 @@ static CURL* curl_handle(int /*index*/) {
 
   /* === set defaults ============================================== */
 
-  //curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1);
   curl_easy_setopt(curl, CURLOPT_USERAGENT, SSE_CLIENT_USERAGENT);
 
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -186,10 +169,6 @@ static CURL* curl_handle(int /*index*/) {
   return curl;
 }
 
-//size_t http_ignore_data(char *ptr, size_t size, size_t nmemb, void *userdata)
-//{ 
-//  return size * nmemb; 
-//}
 
 static size_t onData(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
@@ -219,18 +198,7 @@ extern bool http(HttpVerb verb,
   
   OnDataFunc    on_data,
   std::function<const char*(CURL*)> on_verify,
-  OnProgressFunc progress_callback
-
-/*
-  size_t        (*on_data)(char *ptr, size_t size, size_t nmemb, void *userdata),
-  const char*   (*on_verify)(CURL* curl),
-  size_t        (*progress_callback)(void *clientp, // https://curl.se/libcurl/c/CURLOPT_XFERINFOFUNCTION.html
-        curl_off_t dltotal,
-        curl_off_t dlnow,
-        curl_off_t ultotal,
-        curl_off_t ulnow)
-*/
-)
+  OnProgressFunc progress_callback)
 {
   CURL *curl = curl_handle(verb);
   if (!curl)
