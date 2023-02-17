@@ -17,6 +17,7 @@
     //document.querySelector('button').addEventListener('click',  async () => {
     const eventSource = new EventSource('https://ntfy.sh/mediaReceiverSendOffer/sse');
     eventSource.onmessage = async(e) => {
+        eventSource.close();
         //console.log(e.data);
         const offer = JSON.parse(JSON.parse(e.data).message);
         const pc = new RTCPeerConnection({
