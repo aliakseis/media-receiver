@@ -56,8 +56,10 @@ static enum AppState app_state = APP_STATE_UNKNOWN;
 static const gboolean disable_ssl = FALSE;
 static const gboolean remote_is_offerer = FALSE;
 
-const char send_offer_url[] = "https://ntfy.sh/mediaReceiverSendOffer";
-const char get_answer_url[] = "https://ntfy.sh/mediaReceiverGetAnswer/sse";
+static std::string connection_id;
+
+const char send_offer_url[] = "https://ntfy.sh/mediaReceiverSendOffer_%s";
+const char get_answer_url[] = "https://ntfy.sh/mediaReceiverGetAnswer_%s/sse";
 
 // https://webrtchacks.com/limit-webrtc-bandwidth-sdp/
 static std::string setMediaBitrate(const std::string& sdp, const std::string& media, int bitrate)
@@ -328,8 +330,9 @@ static auto getRemoteEcho()
                     return requestInterrupted;
             };
 
-
-            http(HTTP_GET, get_answer_url, headers, 0, 0, on_data, verify_sse_response, progress_callback);
+            char buffer[1024];
+            sprintf(buffer, get_answer_url, connection_id.c_str());
+            http(HTTP_GET, buffer, headers, 0, 0, on_data, verify_sse_response, progress_callback);
     };
 
     // https://stackoverflow.com/a/23454840/10472202
@@ -390,7 +393,9 @@ send_sdp_to_peer(GstWebRTCSessionDescription * desc)
         return;
     }
 
-    http(HTTP_POST, send_offer_url, nullptr, text, strlen(text));
+    char buffer[1024];
+    sprintf(buffer, send_offer_url, connection_id.c_str());
+    http(HTTP_POST, buffer, nullptr, text, strlen(text));
 
     g_free(text);
 
@@ -777,6 +782,9 @@ main(int argc, char *argv[])
     if (!check_plugins()) {
         goto out;
     }
+
+    std::cout << "Enter Id: ";
+    std::cin >> connection_id;
 
     ret_code = 0;
 

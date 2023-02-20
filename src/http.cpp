@@ -189,7 +189,7 @@ static size_t progressCallback(void *clientp, // https://curl.se/libcurl/c/CURLO
         ulnow);
 }
 
-extern bool http(HttpVerb verb,
+bool http(HttpVerb verb,
   const char*   url, 
   const char**  http_headers, 
   
